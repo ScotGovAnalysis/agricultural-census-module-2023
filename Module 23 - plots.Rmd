@@ -1,0 +1,889 @@
+---
+title: "Module plots"
+output: html_document
+date: "2024-02-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+# Load packages
+
+library(tidyverse)
+library(janitor)
+library(data.table)
+library(haven)
+library(RtoSQLServer)
+library(a11ytables)
+library(stargazer)
+library(ggplot2)
+library(gridExtra)
+library(sgplot)
+
+
+
+
+# ADM schema for export
+
+server <- "s0196a\\ADM"
+database <- "RuralAndEnvironmentalScienceFarmingStatistics"
+schema <- "juneagriculturalsurvey2023alpha"
+
+#run item numbers
+source("item_numbers.R")
+
+# jacmodule <- read_table_from_db(
+#   server = server,
+#   database = database,
+#   schema = schema,
+#   table_name = "JAC23_module_only_280324_imputed"
+# )
+
+
+tables_directory <- ("//s0177a/datashare/seerad/ags/census/branch1/NewStructure/Surveys/June/Codeconversion_2023/2023")
+
+lucy_theme <- function () { 
+    theme() %+replace% 
+        theme(
+            panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 30),
+        axis.title.x = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(hjust = 0.5, vjust = -125, size=32)
+        )
+}
+
+
+
+```
+
+
+Soil cover
+
+```{r}
+
+soil<-read.csv(paste0(tables_directory, "/soilsummary.csv"))
+
+soil<-soil %>% 
+  rename('percentage'='Proportion.of.all.soil.cover....',
+         'holdings'='Number.of.holdings') %>% 
+  mutate(percentage=round_half_up(percentage,0)) %>% 
+  slice(1:7) 
+soil<-soil %>% 
+  arrange(desc(percentage)) %>% 
+  slice(3,7,6,5,4,2,1)
+
+
+soil<-soil %>% 
+  mutate(soilcoveranswer=ifelse(X==2, "Cover or intermediate crop - legume",
+                                ifelse(X==3, "Cover or intermediate crop - not legume", soilcoveranswer)
+         )) %>% 
+     mutate(soilcoveranswer =factor(soilcoveranswer, levels = soilcoveranswer[order(soilcoveranswer)]))
+  
+
+position = position_dodge(width = .5)
+
+
+soilplotpercent<-ggplot(soil, aes(x=fct_inorder(soilcoveranswer), y = percentage)) +
+  geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(percentage,"%")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 25))+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  expand_limits(y = 50)
+
+  
+soilplotpercent
+
+
+ggsave(file="soilpercentgreen.svg", plot=soilplotpercent, width=18, height=8)
+
+
+
+```
+
+
+Tillage
+
+```{r}
+
+
+tillage<-read.csv(paste0(tables_directory, "/tillagesummary.csv"))
+
+
+allholdings<-tillage %>% 
+  slice(4) %>% 
+  select(Number.of.holdings)
+
+allholdings<-as.numeric(allholdings)
+
+tillage1<-tillage %>% 
+  rename(holdings='Number.of.holdings') %>% 
+  mutate(percentage=holdings/allholdings*100) %>% 
+  mutate(percentage=round_half_up(percentage,0)) %>% 
+  slice(1:3)
+  
+tillage2<-tillage %>% 
+  rename('percentage'='Proportion.of.all.tillage....',
+         'holdings'='Number.of.holdings') %>% 
+  mutate(percentage=round_half_up(percentage,0)) %>% 
+  slice(1:3)
+
+
+position = position_dodge(width = .5)
+
+tillageplotholdings<-ggplot(tillage1, aes(x=reorder(tillageanswer, percentage), y = percentage)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(percentage,"%")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  expand_limits(y = 90)
+
+
+tillageplotpercent<-ggplot(tillage1, aes(x=reorder(tillageanswer, percentage), y = percentage)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(percentage,"%")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  expand_limits(y = 85)
+
+  
+
+tillageplotpercent
+
+
+ggsave(file="tillagepercentholdings.svg", plot=tillageplotholdings, width=17, height=3.5)
+
+
+```
+
+
+Nutrient management
+
+```{r, echo=FALSE}
+
+nutrient<-read.csv(paste0(tables_directory, "/nutrientsummary.csv"))
+
+
+nutrient<-nutrient %>% 
+  rename('percentage'='Percentage.of.holdings',
+         'holdings'='Number.of.holdings',
+         "question"="X.1") %>% 
+  mutate(percentage=round_half_up(percentage,0)) %>%
+  mutate(question=str_replace_all(question, "resulted in", "led to")) %>% 
+  mutate(question=ifelse(X==4, "Updated nutrient management plan in last year", question)) %>% 
+  mutate(question =factor(question, levels = question[1:6])) %>% 
+  mutate(holdings=100 * round(holdings/100, 0))
+
+
+# Need to find denominator for percentage
+
+# Import module data
+
+# ADM schema for export
+
+server <- "s0196a\\ADM"
+database <- "RuralAndEnvironmentalScienceFarmingStatistics"
+schema <- "juneagriculturalsurvey2023alpha"
+
+#run item numbers
+source("item_numbers.R")
+
+jacmodule<-read_table_from_db(server=server, 
+                            database=database, 
+                            schema=schema, 
+                            table_name="JAC23_module_only_280324")
+
+
+
+soilcroptesting<-nrow(soilcroptesting<-jacmodule %>% 
+                        filter(item3029==1))
+
+
+soilcropchange<-nrow(soilcropchange<-jacmodule %>% 
+                        filter((item3028==1|item3029==1) & item3032==1))
+
+print(changes<-(soilcropchange/soilcroptesting)*100)
+
+cropgrass<-nrow(jacmodule %>% 
+  filter(allgrassrg>0|allcrop>0))
+
+
+soiltesting<-nrow(jacmodule %>% 
+                        filter(item3029==1|item3028==1))
+
+soiltestingpercent<-soiltesting/cropgrass*100
+
+nutrient<-nutrient %>% 
+  add_row(X=7, question="Soil testing led to change in crop nutrient application (of those who soil tested)", percentage=round(changes,0)) %>% 
+  add_row(X=8, question="Soil testing on either grassland or cropland in last five years", percentage=round(soiltestingpercent,0)) %>% 
+  mutate(question=ifelse(X==3, "Soil testing led to change in crop nutrient application (of those with crops)", question))
+
+
+nutrient<-nutrient %>% 
+  slice(1,2,8,7,3)
+
+nutrient<-nutrient %>% 
+ mutate(question =factor(question, levels = question[1:5]))
+
+```
+
+
+New plot 
+
+
+```{r}
+
+nutrient<-nutrient %>% 
+  slice(1:3)
+
+position = position_dodge(width = .5)
+
+nutrientplotnew<-ggplot(nutrient, aes(x=fct_rev(question), y = percentage)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(percentage, "%")), color="black",
+    position = position, hjust = -0.1, size=10)+
+  coord_flip()+
+  lucy_theme()+
+  theme(axis.text.y = element_text(size = 32))+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 35))+
+  expand_limits(y = 105)
+
+nutrientplotnew
+
+
+ggsave(file="nutrientplotnew.svg", plot=nutrientplotnew, width=20, height=4)
+
+
+```
+
+```{r}
+
+
+
+nutrientplotpercent1<-ggplot(subset(nutrient, X==1 |X==2), aes(x=fct_rev(question), y = holdings)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = prettyNum(holdings,big.mark=",", preserve.width="none")), color="black",
+    position = position, hjust = -0.1, size=10)+
+  coord_flip()+
+  lucy_theme()+
+  theme(axis.text.y = element_text(size = 34))+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 35))+
+  expand_limits(y = 4500)
+  
+
+nutrientplotpercent1
+
+
+ggsave(file="nutrientplotpercentgreen1.svg", plot=nutrientplotpercent1, width=18, height=3)
+
+
+nutrientplotpercent2<-ggplot(subset(nutrient, X==3 |X==4), aes(x=fct_rev(question), y = holdings)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = prettyNum(holdings,big.mark=",", preserve.width="none")), color="black",
+    position = position, hjust = -0.1, size=10)+
+  coord_flip()+
+  lucy_theme()+
+  theme(axis.text.y = element_text(size = 34))+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 35))+
+  expand_limits(y = 4500)
+  
+
+nutrientplotpercent2
+
+
+ggsave(file="nutrientplotpercentgreen2.svg", plot=nutrientplotpercent2, width=18, height=3)
+
+
+nutrientplotpercent3<-ggplot(subset(nutrient, X==5 |X==6), aes(x=fct_rev(question), y = holdings)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = prettyNum(holdings,big.mark=",", preserve.width="none")), color="black",
+    position = position, hjust = -0.1, size=10)+
+  coord_flip()+
+  lucy_theme()+
+  theme(axis.text.y = element_text(size = 34))+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 35))+
+  expand_limits(y = 4500)
+  
+
+nutrientplotpercent3
+
+
+ggsave(file="nutrientplotpercentgreen3.svg", plot=nutrientplotpercent3, width=18, height=3)
+
+```
+
+Mixed sward
+
+
+```{r}
+
+sward<-read.csv(paste0(tables_directory, "/mixedswardsummary.csv"))
+
+sward<-sward %>% 
+  rename('percentage'='Grassland.as.mixed.sward....',
+         'holdings'='Number.of.holdings') %>% 
+  mutate(percentage=round_half_up(percentage,0)) %>% 
+  slice(1:4)
+
+
+
+swardplotpercent<-ggplot(sward, aes(x=reorder(Region, percentage), y = percentage)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(percentage,"%")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  expand_limits(y = 55)
+
+swardplotpercent
+
+
+ggsave(file="swardplotgreen.svg", plot=swardplotpercent, width=18, height=4)
+
+
+```
+
+Use, import and export
+
+```{r}
+
+solid<-read.csv(paste0(tables_directory, "/solidsummary.csv"))
+
+solid<-solid %>% 
+  rename('question'='X.',
+         'holdings'='Number.of.holdings') %>% 
+  select(2,4) %>% 
+  mutate(question=c("Used", "Exported", "Imported")) %>% 
+  mutate(holdings=100 * round(holdings/100, 0))
+
+
+slurry<-read.csv(paste0(tables_directory, "/slurrysummary.csv"))
+
+slurry<-slurry %>% 
+  rename('question'='X.',
+         'holdings'='Number.of.holdings') %>% 
+  select(2,4)%>% 
+  mutate(question=c("Used", "Exported", "Imported"))%>% 
+  mutate(holdings=100 * round(holdings/100, 0))
+
+
+
+position = position_dodge(width = .5)
+
+solidplotpercent<-ggplot(solid, aes(x=question, y = holdings)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = prettyNum(holdings,big.mark=",", preserve.width="none")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  expand_limits(y = 5300)
+
+solidplotpercent
+
+ggsave(file="solidplotgreen.svg", plot=solidplotpercent, width=16, height=3)
+
+
+slurryplotpercent<-ggplot(slurry, aes(x=question, y = holdings)) +
+   geom_bar(stat="identity", fill= "#00D761")+
+  geom_text(aes(label = prettyNum(holdings,big.mark=",", preserve.width="none")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  expand_limits(y = 5300)
+
+slurryplotpercent
+
+ggsave(file="slurryplotgreen.svg", plot=slurryplotpercent, width=16, height=3)
+
+
+```
+
+
+
+```{r, echo=FALSE}
+
+
+hsize<-2
+
+donutplot<-function(data, mapping){
+output <- 
+  ggplot(data=data, aes(x = hsize, y = percentage, fill=group)) +
+  geom_col() +
+  geom_text(aes(label = paste0(percentage,"%"),colour=group),
+             position = position_stack(vjust = 0.5), size=8) +
+   scale_colour_manual(values=c("white", "#EEEEEE"))+
+  coord_polar(theta = "y") +
+  xlim(c(0.2, hsize + 0.8))+
+  scale_fill_manual(values=c("#00833E","#EEEEEE")) +
+  theme(panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())+
+  theme(legend.position = "none")+
+    theme(plot.title = element_text(size=32, hjust = 0.5, vjust = -50))+
+    cowplot::panel_border(colour="white")
+  
+  # + annotate(geom = 'text', x = 0.5, y = 0, size = 16, label = paste0(data$percentage[data$group == '1'], "%"))
+}
+
+nutrman_summary1<-nutrient %>%
+  slice(1) %>% 
+  select(4) 
+
+percentage1<-nutrman_summary1$percentage
+
+nutrman_summary1<-nutrman_summary1 %>%
+  add_row(percentage=(100-percentage1)) %>% 
+  mutate(group=as.factor(c(1,2)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+plot1<-donutplot(nutrman_summary1)+
+  labs(title="Grassland soil testing")
+
+plot1
+
+# Plot 2
+
+nutrman_summary2<-nutrient %>%
+  slice(2) %>% 
+  select(4)
+
+percentage2<-nutrman_summary2$percentage
+
+nutrman_summary2<-nutrman_summary2 %>%
+  add_row(percentage=(100-percentage2)) %>% 
+  mutate(group=as.factor(c(1,2)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+plot2<-donutplot(nutrman_summary2)+
+  labs(title="Cropland soil testing")
+
+
+plot2
+
+
+# Plot 3
+
+nutrman_summary3<-nutrient %>%
+  slice(3) %>% 
+  select(4)
+
+percentage3<-nutrman_summary3$percentage
+
+nutrman_summary3<-nutrman_summary3 %>%
+  add_row(percentage=(100-percentage3)) %>% 
+  mutate(group=as.factor(c(1,3)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+plot3<-donutplot(nutrman_summary3)+
+  labs(title="Testing led to change in \n crop nutrient application")
+
+
+plot3
+
+# Plot 4
+
+nutrman_summary4<-nutrient %>%
+  slice(4) %>% 
+  select(4)
+
+percentage4<-nutrman_summary4$percentage
+
+nutrman_summary4<-nutrman_summary4 %>%
+  add_row(percentage=(100-percentage4)) %>% 
+  mutate(group=as.factor(c(1,4)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+plot4<-donutplot(nutrman_summary4)+
+  labs(title="Wrote or updated \n nutrient management plan")
+
+
+plot4
+
+
+# Plot 5
+
+nutrman_summary5<-nutrient %>%
+  slice(5) %>% 
+  select(4)
+
+percentage5<-nutrman_summary5$percentage
+
+nutrman_summary5<-nutrman_summary5 %>%
+  add_row(percentage=(100-percentage5)) %>% 
+  mutate(group=as.factor(c(1,5)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+plot5<-donutplot(nutrman_summary5)+
+  labs(title="Protected urea")
+
+
+plot5
+
+
+# Plot 6
+
+nutrman_summary6<-nutrient %>%
+  slice(6) %>% 
+  select(4)
+
+percentage6<-nutrman_summary6$percentage
+
+nutrman_summary6<-nutrman_summary6 %>%
+  add_row(percentage=(100-percentage6)) %>% 
+  mutate(group=as.factor(c(1,6)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+plot6<-donutplot(nutrman_summary6)+
+    labs(title="Precision farming \n technology")
+  
+  
+plot6
+
+
+ggsave(file="nutrientplot1.svg", plot=plot1, width=5.5, height=5.7)
+ggsave(file="nutrientplot2.svg", plot=plot2, width=5.5, height=5.7)
+ggsave(file="nutrientplot3.svg", plot=plot3, width=5.5, height=5.7)
+ggsave(file="nutrientplot4.svg", plot=plot4, width=5.5, height=5.7)
+ggsave(file="nutrientplot5.svg", plot=plot5, width=5.5, height=5.7)
+ggsave(file="nutrientplot6.svg", plot=plot6, width=5.5, height=5.7)
+
+```
+
+
+Manure spread technique
+
+```{r}
+
+spread<-read.csv(paste0(tables_directory, "/spreadsummary.csv"))
+
+spread<-spread %>%
+  rename('holdings'='Number.of.holdings',
+         'percentage' = 'Average.percentage')%>%
+  mutate(percentage=round_half_up(percentage, 0)) %>% 
+  slice(1:8) %>% 
+  mutate(Technique=str_remove_all(Technique, "or more ")) %>% 
+  mutate(Technique=str_remove_all(Technique, " spreader")) %>% 
+  mutate(Technique=str_remove_all(Technique, " spreading")) %>% 
+    mutate(Technique =factor(Technique, levels = c("Broadcast with manure not ploughed in", "Broadcast with manure ploughed in after 4 hours", "Band with a trailing hose", "Broadcast with manure ploughed in within 4 hours",
+                                                 "Band with a trailing shoe",
+                                                 "Open-slot shallow injection",
+                                                 "Closed-slot deep injection", "Other")))
+
+
+
+spreadplotpercent<-ggplot(spread, aes(x=fct_rev(Technique), y = percentage)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(percentage,"%")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 30))+
+  expand_limits(y = 45)
+
+spreadplotpercent
+
+ggsave(file="spreadplotgreen.svg", plot=spreadplotpercent, width=18, height=9)
+
+
+
+
+```
+
+Storage technique
+
+```{r}
+
+storage<-read.csv(paste0(tables_directory, "/storagesummary.csv"))
+
+storage<-storage%>% 
+  rename('percentage'='Average.percentage',
+         'holdings'='Number.of.holdings',
+         'Storage'='Storage.system') %>% 
+  mutate(percentage=round_half_up(percentage,0)) %>% 
+  slice(1:10)
+
+storage<-storage %>% 
+  add_row(Storage= "Liquid manure/slurry storage with permeable or impermeable cover", percentage=4, holdings=366) %>% 
+  slice(-c(6,7))
+
+storage<-storage %>% 
+  mutate(Storage=str_remove_all(Storage, "storage ")) %>%
+  mutate(Storage=str_remove_all(Storage, "stored ")) %>%  
+  mutate(Storage=str_remove_all(Storage, "solid ")) %>% 
+    mutate(Storage =factor(Storage, levels = c("Manure in heaps", "Manure in compost piles", "Liquid manure/slurry without cover", 
+                                               "Manure in pits below animal confinement",
+                                                 "Liquid manure/slurry with permeable or impermeable cover",
+                                                 "Manure in deep litter systems",
+                                                 "Manure in other facilities (not elsewhere classified)", "Daily spread", "Other")))
+
+
+position = position_dodge(width = .5)
+
+storageplotpercent<-ggplot(storage, aes(x=fct_rev(Storage), y = percentage)) +
+     geom_bar(stat="identity", fill= "#00833E")+
+    geom_text(aes(label = paste0(percentage,"%")), color="black",
+      position = position, hjust = -0.1, size=9)+
+    coord_flip()+
+    lucy_theme()+
+    cowplot::panel_border(colour="white7", remove=TRUE)+
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 35))+
+    expand_limits(y = 60)
+  
+  storageplotpercent
+
+
+ggsave(file="storageplotgreen.svg", plot=storageplotpercent, width=18, height=12)
+
+
+
+```
+
+Storage time
+
+```{r}
+
+months<-read.csv(paste0(tables_directory, "/monthsummary.csv"))
+
+months<-months %>% 
+  rename('months'= 'Average.number.of.months',
+         'holdings'='Number.of.holdings',
+         'Storage'='Storage.system') %>% 
+  mutate(months=round_half_up(months, 0)) %>% 
+  mutate(Storage=str_remove_all(Storage, " stored")) %>% 
+  mutate(Storage=str_remove_all(Storage, " storage"))
+
+
+position = position_dodge(width = .5)
+
+
+monthsplotpercent<-ggplot(months, aes(x=reorder(Storage, months), y = months)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = paste0(months," months")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 25))+
+  expand_limits(y = 13)
+
+monthsplotpercent
+
+
+ggsave(file="monthsplotgreen.svg", plot=monthsplotpercent, width=18, height=6)
+
+```
+
+
+
+Manure testing and separation of application
+
+
+```{r}
+manuretesting<-read.csv(paste0(tables_directory, "/manuretestingsummary.csv"))
+
+manuretesting<-manuretesting %>%
+  rename('holdings'='Number.of.holdings',
+         'question' = 'X.')
+
+
+manuretesting<-manuretesting %>% 
+  mutate(question=ifelse(X==1, "Tested nutrient value of manure and slurry", "Separated applications of slurry and mineral fertiliser by at least five days"))
+
+position = position_dodge(width = .5)
+
+testingplotpercent<-ggplot(manuretesting, aes(x=reorder(question, holdings), y = holdings)) +
+   geom_bar(stat="identity", fill= "#00833E")+
+  geom_text(aes(label = prettyNum(holdings,big.mark=",", preserve.width="none")), color="black",
+    position = position, hjust = -0.1, size=9)+
+  coord_flip()+
+  lucy_theme()+
+  cowplot::panel_border(colour="white7", remove=TRUE)+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 40))+
+  expand_limits(y = 4500)
+
+testingplotpercent
+
+
+ggsave(file="testingplotgreen.svg", plot=testingplotpercent, width=18, height=3)
+
+
+```
+
+
+Check figure for module response rate
+
+```{r}
+module<-jacmodule %>% 
+  select(section_12, section_13, -c(item20705, item21207))
+
+navars<-c("item3028", "item3029", "item3032", "item3514", "item2684", "item2685")
+
+response<-module %>% 
+  select(-navars) %>% 
+  mutate_if(is.numeric,
+            round,
+            digits = 1) %>% 
+   filter_all(any_vars(. >0))
+  
+
+print(nrow(response))
+
+
+```
+
+
+```{r}
+# Need to find denominator for percentage
+
+# Import module data
+
+# ADM schema for export
+
+server <- "s0196a\\ADM"
+database <- "RuralAndEnvironmentalScienceFarmingStatistics"
+schema <- "juneagriculturalsurvey2023alpha"
+
+#run item numbers
+source("item_numbers.R")
+
+jac2023<-read_table_from_db(server=server, 
+                            database=database, 
+                            schema=schema, 
+                            table_name="JAC23_module_only_280324")
+
+
+usedmanureslurry<-jac2023 %>% 
+  filter(item5129>0 | item5102>0) %>% 
+  select(item5129, item5102, item2662)
+
+usemanuretest<-usedmanureslurry %>% 
+  filter(item2662==1)
+
+
+hsize<-2
+
+testing<-manuretesting%>%
+  slice(1) %>% 
+  select(2,3) %>% 
+  mutate(percentage=holdings/nrow(usedmanureslurry)*100) %>% 
+  select(percentage)
+
+percentage1<-testing$percentage
+
+testing<-testing %>%
+  add_row(percentage=(100-percentage1)) %>% 
+  mutate(group=as.factor(c(1,2)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+
+
+
+donutplot<-function(data, mapping){
+output <- 
+  ggplot(data=data, aes(x = hsize, y = percentage, fill=group)) +
+  geom_col() +
+  geom_text(aes(label = paste0(percentage,"%"),colour=group),
+             position = position_stack(vjust = 0.5), size=8) +
+   scale_colour_manual(values=c("white", "#EEEEEE"))+
+  coord_polar(theta = "y") +
+  xlim(c(0.2, hsize + 0.8))+
+  scale_fill_manual(values=c("#00833E","#EEEEEE")) +
+  theme(panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())+
+  theme(legend.position = "none")+
+    theme(plot.title = element_text(size=32, hjust = 0.5, vjust = -60))+
+    cowplot::panel_border(colour="white")
+  
+  # + annotate(geom = 'text', x = 0.5, y = 0, size = 16, label = paste0(data$percentage[data$group == '1'], "%"))
+}
+
+
+
+plot1<-donutplot(testing)+
+  labs(title="Tested nutrient value \n of manure or slurry")+
+   theme(plot.title = element_text(size=32, hjust = 0.5, vjust = -60))
+
+plot1
+
+ggsave(file="manuretesting.svg", plot=plot1, width=5.5, height=8)
+
+
+
+
+usedslurryfertilisers<-jac2023 %>% 
+  filter(item5102>0 |item5130 >0) %>% 
+  select(item5129, item5102, item2663, item5130)
+
+separated<-usedslurryfertilisers %>% 
+  filter(item2663==1)
+
+
+hsize<-2
+
+separated<-manuretesting%>%
+  slice(2) %>% 
+  select(2,3) %>% 
+  mutate(percentage=holdings/nrow(usedslurryfertilisers)*100) %>% 
+  select(percentage)
+
+percentage1<-separated$percentage
+
+separated<-separated %>%
+  add_row(percentage=(100-percentage1)) %>% 
+  mutate(group=as.factor(c(1,2)),
+         x=hsize,
+         percentage=round(percentage,0))
+
+
+
+plot2<-donutplot(separated)+
+  labs(title="Separated applications \n slurry or mineral fertiliser")+
+   theme(plot.title = element_text(size=32, hjust = 0.5, vjust = -60))
+
+plot2
+
+ggsave(file="separated.svg", plot=plot2, width=5.5, height=8)
+
+
+
+```
+
